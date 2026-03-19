@@ -10,58 +10,35 @@ import {
   CheckCircle,
   FileText,
   Home,
+  AlertCircle,
+  Search,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import Header from "../components/header";
 import Footer from "../components/footer";
-import Swal from "sweetalert2";
-import axios from "axios";
 
 export const API_URL = import.meta.env.VITE_API;
 
 export default function CourseCRUD() {
-  const token = JSON.parse(localStorage.getItem("loginToken")).data;
-  console.log("🚀 ~ CourseCRUD ~ token:", token);
-
-  const [teachers, setTeachers] = useState([]);
-  const [load, setLoad] = useState(true);
-  const getTeacher = async () => {
-    try {
-      const professors = await axios.get(API_URL + "/get-all-professors");
-      setTeachers(professors.data.data);
-      console.log(
-        "🚀 ~ getAllList ~ professors.data.data:",
-        professors.data.data,
-      );
-    } catch (error) {
-      console.error(error);
-      Swal.fire("โปรดตรวจสอบเครือข่าย", "", "error");
-    } finally {
-      setLoad(false);
-    }
-  };
-  useEffect(() => {
-    getTeacher();
-  }, []);
+  const token = JSON.parse(localStorage.getItem("loginToken"))?.data;
 
   const [courses, setCourses] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState({
+    course_id: "",
     course_name: "",
-    teacher_id: "",   // ✅ เพิ่มตัวนี้
-    time_check: "",   // ✅ เพิ่มตัวนี้ด้วย
+    teacher_name: "",
+    time_check: "", // ✅ เพิ่ม time_check
   });
 
-  // เปลี่ยน URL ตามที่คุณตั้งค่าใน .env
-
-  // Load data from API on mount
   useEffect(() => {
     fetchCourses();
   }, []);
 
-  // Fetch all courses
   const fetchCourses = async () => {
     try {
       setLoading(true);
@@ -70,55 +47,81 @@ export default function CourseCRUD() {
       setCourses(data.data || []);
     } catch (error) {
       console.error("Error fetching courses:", error);
-      alert("ไม่สามารถโหลดข้อมูลได้");
+      setError("ไม่สามารถโหลดข้อมูลได้");
     } finally {
       setLoading(false);
     }
   };
+
+  const filteredCourses = courses.filter(
+    (course) =>
+      course.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      course.course_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      course.teacher_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const handleInputChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     });
+    setError("");
   };
 
   const handleSubmit = async () => {
+    if (
+      !formData.course_id ||
+      !formData.course_name ||
+      !formData.teacher_name ||
+      !formData.time_check // ✅ validate time_check
+    ) {
+      setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
+      return;
+    }
+
     try {
       setLoading(true);
+      setError("");
 
       if (editingCourse) {
-        // ✅ Update — เรียก PUT พร้อม course_id
-        const res = await axios.put(
-          `${API_URL}/update-subject/${formData.course_id}`,
+        const response = await fetch(
+          `${API_URL}/update-subject/${editingCourse.course_id}`,
           {
-            course_name: formData.course_name,
-            teacher_id: formData.teacher_id,
-            time_check: formData.time_check,
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              course_name: formData.course_name,
+              teacher_name: formData.teacher_name,
+              time_check: formData.time_check, // ✅ ส่ง time_check ตอน update
+            }),
           }
         );
 
-        if (res.data.err) {
-          return Swal.fire(res.data.err, "ไม่สามารถบันทึกได้", "warning");
+        if (response.ok) {
+          await fetchCourses();
+          resetForm();
+        } else {
+          const errorData = await response.json();
+          setError(errorData.error || "เกิดข้อผิดพลาด");
         }
-
-        Swal.fire("แก้ไขข้อมูลแล้ว", "", "success");
       } else {
-        // ✅ Create — เรียก POST สร้างใหม่
-        const res = await axios.post(`${API_URL}/create-subject`, formData);
+        const response = await fetch(`${API_URL}/create-subject`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData), // ✅ formData มี time_check แล้ว
+        });
 
-        if (res.data.err) {
-          return Swal.fire(res.data.err, "ไม่สามารถบันทึกได้", "warning");
+        if (response.ok) {
+          await fetchCourses();
+          resetForm();
+        } else {
+          const errorData = await response.json();
+          setError(errorData.error || "เกิดข้อผิดพลาด");
         }
-
-        Swal.fire("บันทึกข้อมูลแล้ว", "", "success");
       }
-
-      fetchCourses();
-      setIsModalOpen(false);
     } catch (error) {
       console.error("Error saving:", error);
-      alert("เกิดข้อผิดพลาด กรุณาลองใหม่");
+      setError("เกิดข้อผิดพลาด กรุณาลองใหม่");
     } finally {
       setLoading(false);
     }
@@ -129,9 +132,10 @@ export default function CourseCRUD() {
     setFormData({
       course_id: course.course_id,
       course_name: course.course_name,
-      teacher_id: course.teacher_id,
-      time_check: course?.time_check,
+      teacher_name: course.teacher_name,
+      time_check: course.time_check || "", // ✅ โหลด time_check เดิมมาด้วย
     });
+    setError("");
     setIsModalOpen(true);
   };
 
@@ -145,34 +149,37 @@ export default function CourseCRUD() {
       });
 
       if (response.ok) {
-        alert("ลบข้อมูลสำเร็จ");
         await fetchCourses();
       } else {
-        alert("ไม่สามารถลบข้อมูลได้");
+        setError("ไม่สามารถลบข้อมูลได้");
       }
     } catch (error) {
       console.error("Error deleting:", error);
-      alert("ไม่สามารถลบข้อมูลได้");
+      setError("ไม่สามารถลบข้อมูลได้");
     } finally {
       setLoading(false);
     }
   };
 
   const resetForm = () => {
-    setFormData({
-      course_name: "",
-      teacher_id: "",
-      time_check: "",
-    });
+    setFormData({ course_id: "", course_name: "", teacher_name: "", time_check: "" });
     setEditingCourse(null);
     setIsModalOpen(false);
+    setError("");
   };
 
   return (
-    <div className="min-h-screen mt-20 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
+    <div className="min-h-screen mt-20 bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <Header />
+      <Link
+        className="mb-4 flex items-center gap-2 w-fit px-4 py-2 bg-white hover:bg-gray-50 rounded-xl shadow-md transition-all border border-gray-200"
+        to={token?.role === "1" ? "/my-profile" : "/dashboard"}
+      >
+        <Home className="w-5 h-5 text-blue-600" />
+        <p className="font-medium text-gray-700">หน้าหลัก</p>
+      </Link>
 
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
           <div className="flex items-center justify-between">
@@ -182,7 +189,7 @@ export default function CourseCRUD() {
               </div>
               <div>
                 <h1 className="text-3xl font-bold text-gray-800">
-                  {token?.role == "1" ? "เช็คชื่อ" : "  ระบบจัดการรายวิชา"}
+                  {token?.role === "1" ? "เช็คชื่อ" : "ระบบจัดการรายวิชา"}
                 </h1>
                 {token?.role !== "1" && (
                   <p className="text-gray-500 mt-1">
@@ -193,9 +200,12 @@ export default function CourseCRUD() {
             </div>
             {token?.role !== "1" && (
               <button
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => {
+                  setIsModalOpen(true);
+                  setError("");
+                }}
                 disabled={loading}
-                className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50"
               >
                 <Plus className="w-5 h-5" />
                 เพิ่มรายวิชา
@@ -204,83 +214,120 @@ export default function CourseCRUD() {
           </div>
         </div>
 
+        {/* Error Message */}
+        {error && !isModalOpen && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-red-800 font-medium">{error}</p>
+          </div>
+        )}
+
+        {/* Search Bar */}
+        {courses.length > 0 && (
+          <div className="mb-6">
+            <div className="relative max-w-md">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="ค้นหารายวิชา รหัสวิชา หรือชื่ออาจารย์..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-gray-800"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mt-2">
+              {searchTerm ? (
+                <>
+                  พบ <strong className="text-blue-600">{filteredCourses.length}</strong> รายวิชา
+                  จากการค้นหา "<strong className="text-blue-600">{searchTerm}</strong>"
+                </>
+              ) : (
+                <>
+                  แสดง <strong className="text-blue-600">{filteredCourses.length}</strong> รายวิชา
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
         {/* Table */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
           {loading && courses.length === 0 ? (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-              <span className="ml-3 text-gray-600">กำลังโหลดข้อมูล...</span>
+              <Loader2 className="w-8 h-8 text-blue-500 animate-spin mr-3" />
+              <span className="text-gray-600">กำลังโหลดข้อมูล...</span>
             </div>
           ) : courses.length === 0 ? (
             <div className="text-center py-20">
               <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg">
-                ยังไม่มีรายวิชา กรุณาเพิ่มรายวิชาใหม่
-              </p>
+              <p className="text-gray-500 text-lg">ยังไม่มีรายวิชา กรุณาเพิ่มรายวิชาใหม่</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
                   <tr>
-                    <th className="px-6 py-4 text-left text-sm font-semibold">
-                      ลำดับ
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold">
-                      รหัสวิชา
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold">
-                      ชื่อรายวิชา
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold">
-                      อาจารย์ผู้สอน
-                    </th>
-                    <th className="px-6 py-4 text-center text-sm font-semibold">
-                      จัดการ
-                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold">ลำดับ</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold">รหัสวิชา</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold">ชื่อรายวิชา</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold">อาจารย์ผู้สอน</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold">เวลาเริ่มเช็คชื่อ</th>
+                    <th className="px-6 py-4 text-center text-sm font-semibold">จัดการ</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {courses.map((course, index) => {
-                    console.log("🚀 ~ CourseCRUD ~ token:", token);
-                    return (
-                      <tr
-                        key={course.course_id}
-                        className="hover:bg-blue-50 transition-colors"
-                      >
+                <tbody className="divide-y divide-gray-100">
+                  {filteredCourses.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="text-center py-12">
+                        <Search className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 text-lg font-medium">ไม่พบรายวิชาที่ค้นหา</p>
+                        <p className="text-gray-400 text-sm mt-2">
+                          ลองค้นหาด้วยคำอื่น หรือ{" "}
+                          <button onClick={() => setSearchTerm("")} className="text-blue-600 hover:underline">
+                            ล้างการค้นหา
+                          </button>
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCourses.map((course, index) => (
+                      <tr key={course.course_id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4 text-gray-700">{index + 1}</td>
                         <td className="px-6 py-4">
-                          <span className="font-semibold text-blue-600">
-                            {course.course_id}
-                          </span>
+                          <span className="font-semibold text-blue-600">{course.course_id}</span>
                         </td>
                         <td className="px-6 py-4 text-gray-800 font-medium">
-                          {token?.role == "1" ? (
+                          {token?.role === "1" ? (
                             <Link
-                              to={`/check-manual/${course.course_id}/${JSON.parse(localStorage.getItem("loginToken"))
-                                .data?.student_id
-                                }`}
-                              className="hover:text-blue-500 hover:underline"
+                              to={`/check-manual/${course.course_id}/${
+                                JSON.parse(localStorage.getItem("loginToken")).data?.student_id
+                              }`}
+                              className="hover:text-blue-600 hover:underline"
                             >
-                              {" "}
                               {course.course_name}
                             </Link>
                           ) : (
-                            <p> {course.course_name}</p>
+                            <p>{course.course_name}</p>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-gray-700">
-                          {course.teacher_name}
-                        </td>
+                        <td className="px-6 py-4 text-gray-700">{course.teacher_name}</td>
+                        <td className="px-6 py-4 text-gray-700">{course.time_check || "-"}</td>{/* ✅ แสดง time_check */}
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
-                            {token?.role == "2" || token?.role == "3" ? (
+                            {token?.role === "2" || token?.role === "3" ? (
                               <>
                                 <button
                                   onClick={() => handleEdit(course)}
                                   disabled={loading}
-                                  className="flex items-center gap-1 bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="แก้ไข"
+                                  className="flex items-center gap-1 bg-amber-100 hover:bg-amber-200 text-amber-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                   <Edit2 className="w-4 h-4" />
                                   <span className="text-sm">แก้ไข</span>
@@ -288,8 +335,7 @@ export default function CourseCRUD() {
                                 <button
                                   onClick={() => handleDelete(course.course_id)}
                                   disabled={loading}
-                                  className="flex items-center gap-1 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="ลบ"
+                                  className="flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                   <span className="text-sm">ลบ</span>
@@ -297,16 +343,16 @@ export default function CourseCRUD() {
                               </>
                             ) : (
                               <Link
-                                className="flex items-center gap-2 p-2 rounded-md text-white bg-blue-500"
+                                className="flex items-center gap-2 p-2 rounded-lg text-white bg-blue-500 hover:bg-blue-600 transition-colors"
                                 to={`/class-detail/${course.course_id}/${token?.student_id}`}
                               >
                                 <FileText size={18} />
                                 รายละเอียด
                               </Link>
                             )}
-                            {token?.role == "2" && (
+                            {token?.role === "2" && (
                               <Link
-                                className="flex items-center gap-2 p-2 rounded-md text-white bg-green-500"
+                                className="flex items-center gap-2 p-2 rounded-lg text-white bg-emerald-500 hover:bg-emerald-600 transition-colors"
                                 to={`/check-class/${course.course_id}`}
                               >
                                 <CheckCircle size={18} />
@@ -316,22 +362,26 @@ export default function CourseCRUD() {
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           )}
 
-          {/* Table Footer */}
           {courses.length > 0 && (
             <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
               <p className="text-sm text-gray-600">
-                แสดงทั้งหมด{" "}
-                <span className="font-semibold text-blue-600">
-                  {courses.length}
-                </span>{" "}
-                รายวิชา
+                {searchTerm ? (
+                  <>
+                    พบ <span className="font-semibold text-blue-600">{filteredCourses.length}</span> รายวิชา
+                    จากการค้นหา (ทั้งหมด {courses.length} รายวิชา)
+                  </>
+                ) : (
+                  <>
+                    แสดงทั้งหมด <span className="font-semibold text-blue-600">{courses.length}</span> รายวิชา
+                  </>
+                )}
               </p>
             </div>
           )}
@@ -340,7 +390,7 @@ export default function CourseCRUD() {
         {/* Modal */}
         {isModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
               <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-white">
                   {editingCourse ? "แก้ไขรายวิชา" : "เพิ่มรายวิชาใหม่"}
@@ -355,97 +405,98 @@ export default function CourseCRUD() {
               </div>
 
               <div className="p-6 space-y-5">
-                <>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      รหัสวิชา
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.course_id || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          course_id: e.target.value,
-                        })
-                      }
-                      readOnly
-                      className="w-full px-4 py-3 bg-gray-200 border-2 border-gray-50 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                      placeholder="สร้างอัตโนมัติ"
-                    />
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-red-800 font-medium">{error}</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      ชื่อวิชา
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.course_name || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          course_name: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                      placeholder="การเขียนโปรแกรม"
-                    />
-                  </div>
+                )}
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      ตั้งค่าเวลาเข้าเรียน
-                    </label>
-                    <input
-                      type="time"
-                      value={formData.time_check || ""}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          time_check: e.target.value, // เช่น "08:00"
-                        }))
-                      }
-                      className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl
-               focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      อาจารย์ผู้สอน
-                    </label>
-                    <select
-                      value={formData.teacher_id || ""}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          teacher_id: e.target.value,   // ✅ ใช้ id ตรง ๆ
-                        }))
-                      }
-                      className="w-full p-2 rounded-lg border border-gray-200 outline"
-                    >
-                      <option value="">เลือกอาจารย์</option>   {/* 🔥 ต้องมี */}
-                      {teachers.map((t, index) => (
-                        <option value={t.id} key={index}>
-                          {t.fullname}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </>
-
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-sky-500 hover:from-blue-600 hover:to-sky-600 text-white rounded-xl transition-all shadow-md hover:shadow-lg font-medium"
-                >
-                  {loading ? (
-                    <Loader2 color="white" className="animate-spin" />
-                  ) : (
-                    <Save className="w-5 h-5" />
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">รหัสวิชา</label>
+                  <input
+                    type="text"
+                    name="course_id"
+                    value={formData.course_id}
+                    onChange={handleInputChange}
+                    disabled={editingCourse !== null || loading}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    placeholder="เช่น CS101"
+                  />
+                  {editingCourse && (
+                    <p className="text-xs text-gray-500 mt-1">* ไม่สามารถแก้ไขรหัสวิชาได้</p>
                   )}
-                  บันทึก
-                </button>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">ชื่อรายวิชา</label>
+                  <input
+                    type="text"
+                    name="course_name"
+                    value={formData.course_name}
+                    onChange={handleInputChange}
+                    disabled={loading}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors disabled:opacity-50"
+                    placeholder="เช่น การเขียนโปรแกรมคอมพิวเตอร์"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">อาจารย์ผู้สอน</label>
+                  <input
+                    type="text"
+                    name="teacher_name"
+                    value={formData.teacher_name}
+                    onChange={handleInputChange}
+                    disabled={loading}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors disabled:opacity-50"
+                    placeholder="เช่น อาจารย์สมชาย"
+                  />
+                </div>
+
+                {/* ✅ เพิ่ม input time_check */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    เวลาเริ่มเช็คชื่อ
+                  </label>
+                  <input
+                    type="time"
+                    name="time_check"
+                    value={formData.time_check}
+                    onChange={handleInputChange}
+                    disabled={loading}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors disabled:opacity-50"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    disabled={loading}
+                    className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={loading}
+                    className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg font-medium disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        กำลังบันทึก...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-5 h-5" />
+                        {editingCourse ? "บันทึก" : "เพิ่ม"}
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
