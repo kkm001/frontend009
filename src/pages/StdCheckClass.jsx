@@ -10,7 +10,6 @@ import {
   AlertCircle,
   BookOpen,
   User as UserIcon,
-  Hash,
 } from "lucide-react";
 import axios from "axios";
 import { API_URL } from "./Subject";
@@ -43,12 +42,12 @@ export default function StdCheckClass() {
     try {
       const data = JSON.parse(localStorage.getItem("loginToken")).data;
       if (!data) {
-        location.href = "/";
+        window.location.href = "/";
         return;
       }
       const res = await axios.get(API_URL + `/students/${data?.student_id}`);
       setStdData({
-        stundent_id: res.data?.data?.student_id,
+        student_id: res.data?.data?.student_id, // ✅ แก้พิมพ์ผิดจาก stundent_id เป็น student_id
         fullname: res.data?.data?.fullname,
         major: res.data?.data?.major,
         std_class_id: res?.data?.data?.std_class_id,
@@ -98,7 +97,7 @@ export default function StdCheckClass() {
       textColor: "text-red-700",
     },
     {
-      value: "สาย",
+      value: "มาสาย", // ✅ แก้ให้ตรงกับเงื่อนไขใน Database Backend
       label: "มาสาย",
       icon: Clock,
       color: "from-amber-500 to-orange-600",
@@ -156,12 +155,18 @@ export default function StdCheckClass() {
       if (res.status === 200) {
         setSuccess(true);
         setTimeout(() => {
-          location.href = `/class-detail/${params.classId}/${params.stdId}`;
+          // ✅ เปลี่ยนเป็น window.location.href เพื่อความถูกต้องของคำสั่ง JS
+          window.location.href = `/class-detail/${params.classId}/${stdId}`; 
         }, 2000);
       }
     } catch (error) {
       console.error(error);
-      setError("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      // ✅ เพิ่มการดักจับข้อความ Error จาก Backend ตรงๆ เพื่อให้ผู้ใช้รู้ว่าผิดที่อะไร (เช่น เช็คชื่อซ้ำ, นอกเวลา)
+      if (error.response && error.response.data && error.response.data.err) {
+        setError(error.response.data.err);
+      } else {
+        setError("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+      }
     } finally {
       setLoad(false);
     }
@@ -258,7 +263,7 @@ export default function StdCheckClass() {
                   </label>
                   <input
                     type="text"
-                    value={stdData?.fullname}
+                    value={stdData?.fullname || ""}
                     readOnly
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 cursor-not-allowed"
                   />
@@ -269,7 +274,7 @@ export default function StdCheckClass() {
                   </label>
                   <input
                     type="text"
-                    value={stdData?.std_class_id}
+                    value={stdData?.std_class_id || ""}
                     readOnly
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 cursor-not-allowed"
                   />
@@ -357,7 +362,8 @@ export default function StdCheckClass() {
 
               {/* Submit Button */}
               <button
-                onClick={() => checkClass(status, params.stdId)}
+                // ✅ เปลี่ยนมารับ stdId จาก stdData แบบชัวร์ๆ (ถ้ารหัสไม่มีในพารามิเตอร์)
+                onClick={() => checkClass(status, stdData?.student_id || params?.stdId)}
                 disabled={load || success}
                 className="w-full py-4 rounded-xl font-bold text-white text-lg transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
               >
